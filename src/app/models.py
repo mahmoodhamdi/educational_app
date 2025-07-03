@@ -1,0 +1,76 @@
+from datetime import datetime
+from app import db
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(60), nullable=False)
+    role = db.Column(db.String(20), default='client') # 'admin' or 'client'
+    picture = db.Column(db.String(200), nullable=True)
+    levels = db.relationship('UserLevel', backref='user', lazy=True)
+
+    def __repr__(self):
+        return f'User(\'{self.name}\', \'{self.email}\', \'{self.role}\')'
+
+class Level(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    welcome_video_url = db.Column(db.String(200), nullable=True)
+    image_url = db.Column(db.String(200), nullable=True)
+    price = db.Column(db.Float, nullable=False)
+    initial_exam_question = db.Column(db.Text, nullable=True)
+    final_exam_question = db.Column(db.Text, nullable=True)
+    videos = db.relationship('Video', backref='level', lazy=True)
+    user_levels = db.relationship('UserLevel', backref='level', lazy=True)
+
+    def __repr__(self):
+        return f'Level(\'{self.name}\', {self.price})'
+
+class Video(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    level_id = db.Column(db.Integer, db.ForeignKey('level.id'), nullable=False)
+    youtube_link = db.Column(db.String(200), nullable=False)
+    questions = db.Column(db.Text, nullable=True) # Stored as JSON string or comma-separated
+
+    def __repr__(self):
+        return f'Video(\'{self.youtube_link}\')'
+class UserLevel(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    level_id = db.Column(db.Integer, db.ForeignKey('level.id'), nullable=False)
+    is_completed = db.Column(db.Boolean, default=False)
+    can_take_final_exam = db.Column(db.Boolean, default=False)
+    initial_exam_score = db.Column(db.Float, nullable=True)
+    final_exam_score = db.Column(db.Float, nullable=True)
+    score_difference = db.Column(db.Float, nullable=True)
+    videos_progress = db.relationship('UserVideoProgress', backref='user_level', lazy=True)
+
+    def __repr__(self):
+        return f'UserLevel(User: {self.user_id}, Level: {self.level_id})'
+
+class UserVideoProgress(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_level_id = db.Column(db.Integer, db.ForeignKey('user_level.id'), nullable=False)
+    video_id = db.Column(db.Integer, db.ForeignKey('video.id'), nullable=False)
+    is_opened = db.Column(db.Boolean, default=False)
+    is_completed = db.Column(db.Boolean, default=False)
+
+    def __repr__(self):
+        return f'UserVideoProgress(UserLevel: {self.user_level_id}, Video: {self.video_id}, Opened: {self.is_opened}, Completed: {self.is_completed})'
+
+class ExamResult(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    level_id = db.Column(db.Integer, db.ForeignKey('level.id'), nullable=False)
+    correct_words = db.Column(db.Integer, nullable=False)
+    wrong_words = db.Column(db.Integer, nullable=False)
+    percentage = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String(20), nullable=False) # 'initial' or 'final'
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'ExamResult(User: {self.user_id}, Level: {self.level_id}, Type: {self.type}, Score: {self.percentage})'
+
+
