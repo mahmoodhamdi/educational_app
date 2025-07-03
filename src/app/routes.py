@@ -4,10 +4,17 @@ from app import db, bcrypt
 from app.models import User, Level, Video, UserLevel, UserVideoProgress, ExamResult
 from app.auth import admin_required, client_required, authenticate_user, create_user_token
 import json
-
+from flask import send_from_directory
+import os
 bp = Blueprint('main', __name__)
 
 # Authentication Routes
+# Route to serve uploaded files
+@bp.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory('uploads', filename)
+
+# User registration with role specified by user
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -15,6 +22,11 @@ def register():
     # Check if user already exists
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'User already exists'}), 400
+    
+    # Get role from payload, default to 'client'
+    role = data.get('role', 'client')
+    if role not in ['admin', 'client']:
+        return jsonify({'message': 'Invalid role specified. Must be "admin" or "client"'}), 400
     
     # Hash password
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
@@ -24,7 +36,7 @@ def register():
         name=data['name'],
         email=data['email'],
         password=hashed_password,
-        role=data.get('role', 'client'),
+        role=role,
         picture=data.get('picture', '')
     )
     
@@ -294,6 +306,9 @@ def get_level(level_id):
 
 
 # Video Management Routes
+@bp.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory('uploads', filename)
 @bp.route('/levels/<int:level_id>/videos', methods=['POST'])
 @admin_required
 def add_video_to_level(level_id):
@@ -347,7 +362,32 @@ def delete_video(video_id):
     db.session.commit()
     
     return jsonify({'message': 'Video deleted successfully'}), 200
+# Add video to level with order_index
+@bp.route('/levels/<int:level_id>/videos', methods=['POST'])
+@admin_required
+def add_video_to_level(level_id):
+    level = Level.query.get_or_404(level_id)
+    data = request.get_json()
+    
+    video = Video(
+        level_id=level_id,
+        youtube_link=data['youtube_link'],
+        questions=json.dumps(data.get('questions', [])),
+        order_index=data.get('order_index', 0)
+    )
+    
+    db.session.add(video)
+    db.session.commit()
+    
+    return jsonify({
+        'id': video.id,
+        'youtube_link': video.youtube_link,
+        'questions': json.loads(video.questions) if video.questions else [],
+        'order_index': video.order_index,
+        'is_opened': False
+    }), 201
 
+# Complete video with ordering by order_index
 @bp.route('/users/<int:user_id>/levels/<int:level_id>/videos/<int:video_id>/complete', methods=['PATCH'])
 @client_required
 def complete_video(user_id, level_id, video_id):
@@ -375,8 +415,8 @@ def complete_video(user_id, level_id, video_id):
     # Mark current video as completed
     video_progress.is_completed = True
     
-    # Get all videos in this level ordered by ID
-    level_videos = Video.query.filter_by(level_id=level_id).order_by(Video.id).all()
+    # Get all videos in this level ordered by order_index
+    level_videos = Video.query.filter_by(level_id=level_id).order_by(Video.order_index).all()
     
     # Find next video and open it
     current_video_index = None
@@ -416,6 +456,7 @@ def complete_video(user_id, level_id, video_id):
 
 
 # Image Upload Route
+# Upload level image with directory creation
 @bp.route('/levels/<int:level_id>/upload_image', methods=['POST'])
 @admin_required
 def upload_level_image(level_id):
@@ -429,16 +470,17 @@ def upload_level_image(level_id):
         return jsonify({'message': 'No file selected'}), 400
     
     if file:
-        import os
-        import uuid
-        from werkzeug.utils import secure_filename
+        # Ensure upload directory exists
+        upload_dir = os.path.join('uploads', 'levels')
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir)
         
         # Generate unique filename
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
         
         # Save file
-        upload_path = os.path.join('uploads', 'levels', unique_filename)
+        upload_path = os.path.join(upload_dir, unique_filename)
         file.save(upload_path)
         
         # Update level image URL
@@ -452,9 +494,7 @@ def upload_level_image(level_id):
         }), 200
     
     return jsonify({'message': 'File upload failed'}), 400
-
-
-# Exam Routes
+# Submit Initial Exam
 @bp.route('/exams/<int:level_id>/initial', methods=['POST'])
 @client_required
 def submit_initial_exam(level_id):
@@ -729,9 +769,9 @@ def get_admin_statistics():
     # Average completion rate
     completion_rate = (completed_levels / total_purchases * 100) if total_purchases > 0 else 0
     
-    # Most popular levels
+    # Most popular levels with labeled columns
     popular_levels = db.session.query(
-        Level.name,
+        Level.name.label('level_name'),
         db.func.count(UserLevel.id).label('purchases')
     ).join(UserLevel).group_by(Level.id).order_by(db.desc('purchases')).limit(5).all()
     
@@ -741,9 +781,8 @@ def get_admin_statistics():
         'total_purchases': total_purchases,
         'completed_levels': completed_levels,
         'completion_rate': round(completion_rate, 2),
-        'popular_levels': [{'name': level.name, 'purchases': purchases} for level, purchases in popular_levels]
+        'popular_levels': [{'name': level.level_name, 'purchases': level.purchases} for level in popular_levels]
     }), 200
-
 @bp.route('/admin/users/<int:user_id>/statistics', methods=['GET'])
 @admin_required
 def get_user_statistics(user_id):

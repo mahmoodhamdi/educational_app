@@ -8,7 +8,7 @@ import requests
 import json
 import time
 
-BASE_URL = "http://localhost:5001"
+BASE_URL = "http://192.168.1.5:5000"
 
 def test_register_and_login():
     """Test user registration and login"""

@@ -1,0 +1,158 @@
+# cURL Commands for Educational App API
+
+# Base URL: Replace with your actual base URL (e.g., http://localhost:5001 or the deployed URL)
+BASE_URL="https://5001-imkguih89b0dht2oyikr0-d23adca2.manusvm.computer"
+
+# --- Authentication ---
+
+# Request Name: Register Admin
+curl -X POST "{{base}}register/admin" \
+     -H "Content-Type: application/json" \
+     -d '{ "name": "Admin User", "email": "admin@example.com", "password": "admin123", "picture": "https://example.com/admin.jpg" }'
+
+# Request Name: Register Client
+curl -X POST "{{base}}register/client" \
+     -H "Content-Type: application/json" \
+     -d '{ "name": "Client User", "email": "client@example.com", "password": "client123", "picture": "https://example.com/client.jpg" }'
+# Request Name: Login Admin
+# After running this, copy the 'token' from the response and set ADMIN_TOKEN variable.
+# Also copy 'id' and set ADMIN_ID variable.
+curl -X POST "{{base}}login" \
+     -H "Content-Type: application/json" \
+     -d '{ "email": "admin@example.com", "password": "admin123" }'
+
+# Request Name: Login Client
+# After running this, copy the 'token' from the response and set CLIENT_TOKEN variable.
+# Also copy 'id' and set CLIENT_ID variable.
+curl -X POST "{{base}}login" \
+     -H "Content-Type: application/json" \
+     -d '{ "email": "client@example.com", "password": "client123" }'
+
+# Example of setting tokens (replace with actual tokens and IDs):
+# ADMIN_TOKEN="YOUR_ADMIN_JWT_TOKEN_HERE"
+# CLIENT_TOKEN="YOUR_CLIENT_JWT_TOKEN_HERE"
+# ADMIN_ID="1"
+# CLIENT_ID="2"
+# LEVEL_ID="1"
+# VIDEO_ID="1"
+
+
+# --- User Management ---
+
+# Request Name: Get User Details (Admin)
+curl -X GET "{{base}}users/{{CLIENT_ID}}" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+# Request Name: Update User (Admin)
+curl -X PUT "{{base}}users/{{CLIENT_ID}}" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -d '{ "name": "Updated Client Name", "picture": "https://example.com/updated_client.jpg", "role": "client" }'
+
+
+# --- Level Management ---
+
+# Request Name: Create Level (Admin)
+# After running this, copy the 'id' from the response and set LEVEL_ID variable.
+curl -X POST "{{base}}levels" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -d '{ "name": "Sample Level", "description": "A description for the sample level.", "welcome_video_url": "https://www.youtube.com/watch?v=sample_welcome", "image_url": "https://example.com/sample_level.jpg", "price": 19.99, "initial_exam_question": "What is the capital of France?", "final_exam_question": "Summarize the key concepts of this level." }'
+
+# Request Name: Get All Levels (Client)
+curl -X GET "{{base}}levels" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+# Request Name: Get Single Level (Client)
+curl -X GET "{{base}}levels/{{LEVEL_ID}}" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+# Request Name: Update Level (Admin)
+curl -X PUT "{{base}}levels/{{LEVEL_ID}}" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -d '{ "name": "Updated Sample Level", "description": "An updated description for the sample level.", "price": 24.99 }'
+
+# Request Name: Delete Level (Admin)
+curl -X DELETE "{{base}}levels/{{LEVEL_ID}}" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+
+# --- Video Management ---
+
+# Request Name: Add Video to Level (Admin)
+# After running this, copy the 'id' from the response and set VIDEO_ID variable.
+curl -X POST "{{base}}levels/{{LEVEL_ID}}/videos" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -d '{ "youtube_link": "https://www.youtube.com/watch?v=video_one", "questions": ["Question 1 for video one", "Question 2 for video one"] }'
+
+# Request Name: Update Video (Admin)
+curl -X PUT "{{base}}videos/{{VIDEO_ID}}" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -d '{ "youtube_link": "https://www.youtube.com/watch?v=video_one_updated", "questions": ["Updated Question 1", "Updated Question 2"] }'
+
+# Request Name: Delete Video (Admin)
+curl -X DELETE "{{base}}videos/{{VIDEO_ID}}" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+
+# --- Image Upload ---
+
+# Request Name: Upload Level Image (Admin)
+# Replace /path/to/your/image.jpg with the actual path to an image file on your system.
+curl -X POST "{{base}}levels/{{LEVEL_ID}}/upload_image" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
+     -F "file=@/path/to/your/image.jpg"
+
+
+# --- Exams ---
+
+# Request Name: Submit Initial Exam (Client)
+curl -X POST "{{base}}exams/{{LEVEL_ID}}/initial" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}" \
+     -d '{ "correct_words": 15, "wrong_words": 5 }'
+
+# Request Name: Submit Final Exam (Client)
+curl -X POST "{{base}}exams/{{LEVEL_ID}}/final" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}" \
+     -d '{ "correct_words": 18, "wrong_words": 2 }'
+
+# Request Name: Get User Exam Results (Client)
+curl -X GET "{{base}}exams/{{LEVEL_ID}}/user/{{CLIENT_ID}}" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+
+# --- Progress Tracking ---
+
+# Request Name: Get User's Purchased Levels (Client)
+curl -X GET "{{base}}users/{{CLIENT_ID}}/levels" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+# Request Name: Purchase Level (Client)
+curl -X POST "{{base}}users/{{CLIENT_ID}}/levels/{{LEVEL_ID}}/purchase" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+# Request Name: Complete Video (Client)
+curl -X PATCH "{{base}}users/{{CLIENT_ID}}/levels/{{LEVEL_ID}}/videos/{{VIDEO_ID}}/complete" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+# Request Name: Update Level Progress (Client)
+curl -X PATCH "{{base}}users/{{CLIENT_ID}}/levels/{{LEVEL_ID}}/update_progress" \
+     -H "Authorization: Bearer {{CLIENT_TOKEN}}"
+
+
+# --- Statistics (Admin Only) ---
+
+# Request Name: Get Admin Statistics
+curl -X GET "{{base}}admin/statistics" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+# Request Name: Get User Statistics (Admin)
+curl -X GET "{{base}}admin/users/{{CLIENT_ID}}/statistics" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+

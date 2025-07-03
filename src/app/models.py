@@ -27,15 +27,15 @@ class Level(db.Model):
 
     def __repr__(self):
         return f'Level(\'{self.name}\', {self.price})'
-
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     level_id = db.Column(db.Integer, db.ForeignKey('level.id'), nullable=False)
     youtube_link = db.Column(db.String(200), nullable=False)
-    questions = db.Column(db.Text, nullable=True) # Stored as JSON string or comma-separated
+    questions = db.Column(db.Text, nullable=True)
+    order_index = db.Column(db.Integer, nullable=False, default=0)
 
     def __repr__(self):
-        return f'Video(\'{self.youtube_link}\')'
+        return f'Video(\'{self.youtube_link}\', Order: {self.order_index})'
 class UserLevel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

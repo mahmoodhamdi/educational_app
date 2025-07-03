@@ -741,7 +741,7 @@ def get_admin_statistics():
         'total_purchases': total_purchases,
         'completed_levels': completed_levels,
         'completion_rate': round(completion_rate, 2),
-        'popular_levels': [{'name': level.name, 'purchases': purchases} for level, purchases in popular_levels]
+        'popular_levels': [{'name': level, 'purchases': purchases} for level, purchases in popular_levels]
     }), 200
 
 @bp.route('/admin/users/<int:user_id>/statistics', methods=['GET'])
