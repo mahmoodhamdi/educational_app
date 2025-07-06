@@ -67,6 +67,7 @@ POST /login
 {
   "email": "ahmed@example.com",
   "password": "password123"
+  
 }
 ```
 

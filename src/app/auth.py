@@ -1,6 +1,6 @@
 from functools import wraps
 from flask import jsonify, request
-from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
+from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token, verify_jwt_in_request
 from app.models import User
 from app import bcrypt
 
@@ -33,5 +33,13 @@ def authenticate_user(email, password):
     return None
 
 def create_user_token(user):
-    return create_access_token(identity=str(user.id))
+    additional_claims = {"role": user.role}
+    return create_access_token(identity=str(user.id), additional_claims=additional_claims)
 
+def get_current_user():
+    try:
+        verify_jwt_in_request()
+        user_id = get_jwt_identity()
+        return User.query.get(user_id)
+    except Exception:
+        return None

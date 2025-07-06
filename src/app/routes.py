@@ -2,36 +2,35 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db, bcrypt
 from app.models import User, Level, Video, UserLevel, UserVideoProgress, ExamResult
-from app.auth import admin_required, client_required, authenticate_user, create_user_token
+from app.auth import admin_required, client_required, authenticate_user, create_user_token, get_current_user
 import json
 from flask import send_from_directory
 import os
+from werkzeug.utils import secure_filename
+import uuid
+
 bp = Blueprint('main', __name__)
 
-# Authentication Routes
-# Route to serve uploaded files
 @bp.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    return send_from_directory('uploads', filename)
+    return send_from_directory('Uploads', filename)
 
-# User registration with role specified by user
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
     
-    # Check if user already exists
+    if not all(key in data for key in ['name', 'email', 'password', 'role']):
+        return jsonify({'message': 'Missing required fields'}), 400
+    
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'User already exists'}), 400
     
-    # Get role from payload, default to 'client'
-    role = data.get('role', 'client')
+    role = data['role']
     if role not in ['admin', 'client']:
         return jsonify({'message': 'Invalid role specified. Must be "admin" or "client"'}), 400
     
-    # Hash password
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     
-    # Create new user
     user = User(
         name=data['name'],
         email=data['email'],
@@ -43,7 +42,6 @@ def register():
     db.session.add(user)
     db.session.commit()
     
-    # Create token
     token = create_user_token(user)
     
     return jsonify({
@@ -77,11 +75,8 @@ def login():
 @bp.route('/users/<int:user_id>', methods=['GET'])
 @client_required
 def get_user(user_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only access their own data unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
     target_user = User.query.get_or_404(user_id)
@@ -97,11 +92,8 @@ def get_user(user_id):
 @bp.route('/users/<int:user_id>', methods=['PUT'])
 @client_required
 def update_user(user_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only update their own data unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
     target_user = User.query.get_or_404(user_id)
@@ -110,9 +102,11 @@ def update_user(user_id):
     target_user.name = data.get('name', target_user.name)
     target_user.picture = data.get('picture', target_user.picture)
     
-    # Only admin can change roles
-    if user.role == 'admin':
-        target_user.role = data.get('role', target_user.role)
+    if current_user.role == 'admin' and 'role' in data:
+        if data['role'] in ['admin', 'client']:
+            target_user.role = data['role']
+        else:
+            return jsonify({'message': 'Invalid role'}), 400
     
     db.session.commit()
     
@@ -124,13 +118,13 @@ def update_user(user_id):
         'picture': target_user.picture
     }), 200
 
-
-
-# Level Management Routes
 @bp.route('/levels', methods=['POST'])
 @admin_required
 def create_level():
     data = request.get_json()
+    
+    if not all(key in data for key in ['name', 'price']):
+        return jsonify({'message': 'Missing required fields'}), 400
     
     level = Level(
         name=data['name'],
@@ -192,10 +186,8 @@ def update_level(level_id):
 def delete_level(level_id):
     level = Level.query.get_or_404(level_id)
     
-    # Delete associated videos and user progress
     for video in level.videos:
         db.session.delete(video)
-    
     for user_level in level.user_levels:
         db.session.delete(user_level)
     
@@ -207,9 +199,7 @@ def delete_level(level_id):
 @bp.route('/levels', methods=['GET'])
 @client_required
 def get_levels():
-    current_user_id = int(get_jwt_identity())
-    user = User.query.get(current_user_id)
-    
+    current_user = get_current_user()
     levels = Level.query.all()
     result = []
     
@@ -229,19 +219,13 @@ def get_levels():
             'can_take_final_exam': False
         }
         
-        # Check if user has purchased this level
-        user_level = UserLevel.query.filter_by(user_id=current_user_id, level_id=level.id).first()
+        user_level = UserLevel.query.filter_by(user_id=current_user.id, level_id=level.id).first()
         if user_level:
             level_data['is_completed'] = user_level.is_completed
             level_data['can_take_final_exam'] = user_level.can_take_final_exam
-            
-            # Add video progress for purchased levels
             for video in level.videos:
                 video_progress = UserVideoProgress.query.filter_by(
-                    user_level_id=user_level.id, 
-                    video_id=video.id
-                ).first()
-                
+                    user_level_id=user_level.id, video_id=video.id).first()
                 video_data = {
                     'id': video.id,
                     'youtube_link': video.youtube_link,
@@ -250,7 +234,6 @@ def get_levels():
                 }
                 level_data['videos'].append(video_data)
         else:
-            # For non-purchased levels, don't show video details
             level_data['videos'] = [{'id': v.id, 'youtube_link': '', 'questions': [], 'is_opened': False} for v in level.videos]
         
         result.append(level_data)
@@ -260,7 +243,7 @@ def get_levels():
 @bp.route('/levels/<int:level_id>', methods=['GET'])
 @client_required
 def get_level(level_id):
-    current_user_id = int(get_jwt_identity())
+    current_user = get_current_user()
     level = Level.query.get_or_404(level_id)
     
     level_data = {
@@ -278,19 +261,13 @@ def get_level(level_id):
         'can_take_final_exam': False
     }
     
-    # Check if user has purchased this level
-    user_level = UserLevel.query.filter_by(user_id=current_user_id, level_id=level.id).first()
+    user_level = UserLevel.query.filter_by(user_id=current_user.id, level_id=level.id).first()
     if user_level:
         level_data['is_completed'] = user_level.is_completed
         level_data['can_take_final_exam'] = user_level.can_take_final_exam
-        
-        # Add video progress for purchased levels
         for video in level.videos:
             video_progress = UserVideoProgress.query.filter_by(
-                user_level_id=user_level.id, 
-                video_id=video.id
-            ).first()
-            
+                user_level_id=user_level.id, video_id=video.id).first()
             video_data = {
                 'id': video.id,
                 'youtube_link': video.youtube_link,
@@ -298,27 +275,22 @@ def get_level(level_id):
                 'is_opened': video_progress.is_opened if video_progress else False
             }
             level_data['videos'].append(video_data)
-    else:
-        # For non-purchased levels, don't show video details
-        level_data['videos'] = [{'id': v.id, 'youtube_link': '', 'questions': [], 'is_opened': False} for v in level.videos]
+        else:
+            level_data['videos'] = [{'id': v.id, 'youtube_link': '', 'questions': [], 'is_opened': False} for v in level.videos]
     
     return jsonify(level_data), 200
 
-
-# Video Management Routes
-@bp.route('/uploads/<path:filename>')
-def uploaded_file(filename):
-    return send_from_directory('uploads', filename)
 @bp.route('/levels/<int:level_id>/videos', methods=['POST'])
 @admin_required
 def add_video_to_level(level_id):
-    level = Level.query.get_or_404(level_id)
+    Level.query.get_or_404(level_id)
     data = request.get_json()
     
     video = Video(
         level_id=level_id,
         youtube_link=data['youtube_link'],
-        questions=json.dumps(data.get('questions', []))
+        questions=json.dumps(data.get('questions', [])),
+        order_index=data.get('order_index', 0)
     )
     
     db.session.add(video)
@@ -328,6 +300,7 @@ def add_video_to_level(level_id):
         'id': video.id,
         'youtube_link': video.youtube_link,
         'questions': json.loads(video.questions) if video.questions else [],
+        'order_index': video.order_index,
         'is_opened': False
     }), 201
 
@@ -352,8 +325,6 @@ def update_video(video_id):
 @admin_required
 def delete_video(video_id):
     video = Video.query.get_or_404(video_id)
-    
-    # Delete associated user progress
     user_progresses = UserVideoProgress.query.filter_by(video_id=video_id).all()
     for progress in user_progresses:
         db.session.delete(progress)
@@ -362,91 +333,38 @@ def delete_video(video_id):
     db.session.commit()
     
     return jsonify({'message': 'Video deleted successfully'}), 200
-# Add video to level with order_index
-@bp.route('/levels/<int:level_id>/videos', methods=['POST'])
-@admin_required
-def add_video_to_level(level_id):
-    level = Level.query.get_or_404(level_id)
-    data = request.get_json()
-    
-    video = Video(
-        level_id=level_id,
-        youtube_link=data['youtube_link'],
-        questions=json.dumps(data.get('questions', [])),
-        order_index=data.get('order_index', 0)
-    )
-    
-    db.session.add(video)
-    db.session.commit()
-    
-    return jsonify({
-        'id': video.id,
-        'youtube_link': video.youtube_link,
-        'questions': json.loads(video.questions) if video.questions else [],
-        'order_index': video.order_index,
-        'is_opened': False
-    }), 201
 
-# Complete video with ordering by order_index
 @bp.route('/users/<int:user_id>/levels/<int:level_id>/videos/<int:video_id>/complete', methods=['PATCH'])
 @client_required
 def complete_video(user_id, level_id, video_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only update their own progress unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
-    # Check if user has purchased the level
     user_level = UserLevel.query.filter_by(user_id=user_id, level_id=level_id).first()
     if not user_level:
         return jsonify({'message': 'Level not purchased'}), 400
     
-    # Get or create video progress
-    video_progress = UserVideoProgress.query.filter_by(
-        user_level_id=user_level.id, 
-        video_id=video_id
-    ).first()
-    
+    video_progress = UserVideoProgress.query.filter_by(user_level_id=user_level.id, video_id=video_id).first()
     if not video_progress:
         return jsonify({'message': 'Video not accessible'}), 400
     
-    # Mark current video as completed
     video_progress.is_completed = True
     
-    # Get all videos in this level ordered by order_index
     level_videos = Video.query.filter_by(level_id=level_id).order_by(Video.order_index).all()
-    
-    # Find next video and open it
-    current_video_index = None
-    for i, video in enumerate(level_videos):
-        if video.id == video_id:
-            current_video_index = i
-            break
+    current_video_index = next((i for i, v in enumerate(level_videos) if v.id == video_id), None)
     
     if current_video_index is not None and current_video_index + 1 < len(level_videos):
         next_video = level_videos[current_video_index + 1]
         next_video_progress = UserVideoProgress.query.filter_by(
-            user_level_id=user_level.id, 
-            video_id=next_video.id
-        ).first()
-        
+            user_level_id=user_level.id, video_id=next_video.id).first()
         if next_video_progress:
             next_video_progress.is_opened = True
     
-    # Check if all videos are completed
-    all_videos_completed = True
-    for video in level_videos:
-        video_prog = UserVideoProgress.query.filter_by(
-            user_level_id=user_level.id, 
-            video_id=video.id
-        ).first()
-        if not video_prog or not video_prog.is_completed:
-            all_videos_completed = False
-            break
-    
-    # If all videos completed, allow final exam
+    all_videos_completed = all(
+        UserVideoProgress.query.filter_by(user_level_id=user_level.id, video_id=v.id).first().is_completed
+        for v in level_videos
+    )
     if all_videos_completed:
         user_level.can_take_final_exam = True
     
@@ -454,9 +372,6 @@ def complete_video(user_id, level_id, video_id):
     
     return jsonify({'message': 'Video completed successfully'}), 200
 
-
-# Image Upload Route
-# Upload level image with directory creation
 @bp.route('/levels/<int:level_id>/upload_image', methods=['POST'])
 @admin_required
 def upload_level_image(level_id):
@@ -469,50 +384,41 @@ def upload_level_image(level_id):
     if file.filename == '':
         return jsonify({'message': 'No file selected'}), 400
     
-    if file:
-        # Ensure upload directory exists
-        upload_dir = os.path.join('uploads', 'levels')
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir)
-        
-        # Generate unique filename
-        filename = secure_filename(file.filename)
-        unique_filename = f"{uuid.uuid4()}_{filename}"
-        
-        # Save file
-        upload_path = os.path.join(upload_dir, unique_filename)
-        file.save(upload_path)
-        
-        # Update level image URL
-        image_url = f"/uploads/levels/{unique_filename}"
-        level.image_url = image_url
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'image_url': image_url
-        }), 200
+    upload_dir = os.path.join('Uploads', 'levels')
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
     
-    return jsonify({'message': 'File upload failed'}), 400
-# Submit Initial Exam
+    filename = secure_filename(file.filename)
+    unique_filename = f"{uuid.uuid4()}_{filename}"
+    upload_path = os.path.join(upload_dir, unique_filename)
+    file.save(upload_path)
+    
+    image_url = f"/Uploads/levels/{unique_filename}"
+    level.image_url = image_url
+    db.session.commit()
+    
+    return jsonify({'success': True, 'image_url': image_url}), 200
+
 @bp.route('/exams/<int:level_id>/initial', methods=['POST'])
 @client_required
 def submit_initial_exam(level_id):
-    current_user_id = int(get_jwt_identity())
+    current_user = get_current_user()
     data = request.get_json()
     
-    # Check if user has purchased the level
-    user_level = UserLevel.query.filter_by(user_id=current_user_id, level_id=level_id).first()
+    if not all(key in data for key in ['correct_words', 'wrong_words']):
+        return jsonify({'message': 'Missing exam data'}), 400
+    
+    user_level = UserLevel.query.filter_by(user_id=current_user.id, level_id=level_id).first()
     if not user_level:
         return jsonify({'message': 'Level not purchased'}), 400
     
-    # Calculate percentage
     total_words = data['correct_words'] + data['wrong_words']
-    percentage = (data['correct_words'] / total_words * 100) if total_words > 0 else 0
+    if total_words == 0:
+        return jsonify({'message': 'No words provided'}), 400
+    percentage = (data['correct_words'] / total_words) * 100
     
-    # Create exam result
     exam_result = ExamResult(
-        user_id=current_user_id,
+        user_id=current_user.id,
         level_id=level_id,
         correct_words=data['correct_words'],
         wrong_words=data['wrong_words'],
@@ -520,14 +426,12 @@ def submit_initial_exam(level_id):
         type='initial'
     )
     
-    # Update user level with initial exam score
     user_level.initial_exam_score = percentage
-    
     db.session.add(exam_result)
     db.session.commit()
     
     return jsonify({
-        'user_id': current_user_id,
+        'user_id': current_user.id,
         'level_id': level_id,
         'correct_words': data['correct_words'],
         'wrong_words': data['wrong_words'],
@@ -538,24 +442,25 @@ def submit_initial_exam(level_id):
 @bp.route('/exams/<int:level_id>/final', methods=['POST'])
 @client_required
 def submit_final_exam(level_id):
-    current_user_id = int(get_jwt_identity())
+    current_user = get_current_user()
     data = request.get_json()
     
-    # Check if user has purchased the level and can take final exam
-    user_level = UserLevel.query.filter_by(user_id=current_user_id, level_id=level_id).first()
+    if not all(key in data for key in ['correct_words', 'wrong_words']):
+        return jsonify({'message': 'Missing exam data'}), 400
+    
+    user_level = UserLevel.query.filter_by(user_id=current_user.id, level_id=level_id).first()
     if not user_level:
         return jsonify({'message': 'Level not purchased'}), 400
-    
     if not user_level.can_take_final_exam:
-        return jsonify({'message': 'Final exam not available yet. Complete all videos first.'}), 400
+        return jsonify({'message': 'Final exam not available yet'}), 400
     
-    # Calculate percentage
     total_words = data['correct_words'] + data['wrong_words']
-    percentage = (data['correct_words'] / total_words * 100) if total_words > 0 else 0
+    if total_words == 0:
+        return jsonify({'message': 'No words provided'}), 400
+    percentage = (data['correct_words'] / total_words) * 100
     
-    # Create exam result
     exam_result = ExamResult(
-        user_id=current_user_id,
+        user_id=current_user.id,
         level_id=level_id,
         correct_words=data['correct_words'],
         wrong_words=data['wrong_words'],
@@ -563,19 +468,16 @@ def submit_final_exam(level_id):
         type='final'
     )
     
-    # Update user level with final exam score and calculate difference
     user_level.final_exam_score = percentage
     if user_level.initial_exam_score is not None:
         user_level.score_difference = percentage - user_level.initial_exam_score
-    
-    # Mark level as completed
     user_level.is_completed = True
     
     db.session.add(exam_result)
     db.session.commit()
     
     return jsonify({
-        'user_id': current_user_id,
+        'user_id': current_user.id,
         'level_id': level_id,
         'correct_words': data['correct_words'],
         'wrong_words': data['wrong_words'],
@@ -586,57 +488,40 @@ def submit_final_exam(level_id):
 @bp.route('/exams/<int:level_id>/user/<int:user_id>', methods=['GET'])
 @client_required
 def get_user_exam_results(level_id, user_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only access their own exam results unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
     exam_results = ExamResult.query.filter_by(user_id=user_id, level_id=level_id).all()
-    
-    results = []
-    for exam in exam_results:
-        results.append({
-            'user_id': exam.user_id,
-            'level_id': exam.level_id,
-            'correct_words': exam.correct_words,
-            'wrong_words': exam.wrong_words,
-            'percentage': exam.percentage,
-            'type': exam.type,
-            'timestamp': exam.timestamp.isoformat()
-        })
+    results = [{
+        'user_id': exam.user_id,
+        'level_id': exam.level_id,
+        'correct_words': exam.correct_words,
+        'wrong_words': exam.wrong_words,
+        'percentage': exam.percentage,
+        'type': exam.type,
+        'timestamp': exam.timestamp.isoformat()
+    } for exam in exam_results]
     
     return jsonify(results), 200
 
-
-# User Progress Routes
 @bp.route('/users/<int:user_id>/levels', methods=['GET'])
 @client_required
 def get_user_levels(user_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only access their own progress unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
     user_levels = UserLevel.query.filter_by(user_id=user_id).all()
-    
     result = []
     for user_level in user_levels:
         level = user_level.level
-        
-        # Get video progress
         videos_progress = []
         completed_videos_count = 0
         
         for video in level.videos:
             video_progress = UserVideoProgress.query.filter_by(
-                user_level_id=user_level.id, 
-                video_id=video.id
-            ).first()
-            
+                user_level_id=user_level.id, video_id=video.id).first()
             if video_progress:
                 videos_progress.append({
                     'video_id': video.id,
@@ -652,7 +537,7 @@ def get_user_levels(user_id):
                     'is_completed': False
                 })
         
-        level_data = {
+        result.append({
             'user_id': user_id,
             'level_id': level.id,
             'level_name': level.name,
@@ -664,49 +549,31 @@ def get_user_levels(user_id):
             'initial_exam_score': user_level.initial_exam_score,
             'final_exam_score': user_level.final_exam_score,
             'score_difference': user_level.score_difference
-        }
-        
-        result.append(level_data)
+        })
     
     return jsonify(result), 200
 
 @bp.route('/users/<int:user_id>/levels/<int:level_id>/purchase', methods=['POST'])
 @client_required
 def purchase_level(user_id, level_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only purchase for themselves unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
-    # Check if level exists
     level = Level.query.get_or_404(level_id)
-    
-    # Check if already purchased
-    existing_user_level = UserLevel.query.filter_by(user_id=user_id, level_id=level_id).first()
-    if existing_user_level:
+    if UserLevel.query.filter_by(user_id=user_id, level_id=level_id).first():
         return jsonify({'message': 'Level already purchased'}), 400
     
-    # Create user level
-    user_level = UserLevel(
-        user_id=user_id,
-        level_id=level_id,
-        is_completed=False,
-        can_take_final_exam=False
-    )
-    
+    user_level = UserLevel(user_id=user_id, level_id=level_id)
     db.session.add(user_level)
-    db.session.flush()  # To get the user_level.id
+    db.session.flush()
     
-    # Create video progress for all videos in the level
     level_videos = Video.query.filter_by(level_id=level_id).order_by(Video.id).all()
-    
     for i, video in enumerate(level_videos):
         video_progress = UserVideoProgress(
             user_level_id=user_level.id,
             video_id=video.id,
-            is_opened=(i == 0),  # First video is opened by default
+            is_opened=(i == 0),
             is_completed=False
         )
         db.session.add(video_progress)
@@ -718,27 +585,18 @@ def purchase_level(user_id, level_id):
 @bp.route('/users/<int:user_id>/levels/<int:level_id>/update_progress', methods=['PATCH'])
 @client_required
 def update_level_progress(user_id, level_id):
-    current_user_id = int(get_jwt_identity())
-    
-    # Users can only update their own progress unless they're admin
-    user = User.query.get(current_user_id)
-    if user.role != 'admin' and current_user_id != user_id:
+    current_user = get_current_user()
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'message': 'Access denied'}), 403
     
-    # Check if user has purchased the level
     user_level = UserLevel.query.filter_by(user_id=user_id, level_id=level_id).first()
     if not user_level:
         return jsonify({'message': 'Level not purchased'}), 400
     
-    # Count completed videos
     completed_videos = UserVideoProgress.query.filter_by(
-        user_level_id=user_level.id,
-        is_completed=True
-    ).count()
-    
+        user_level_id=user_level.id, is_completed=True).count()
     total_videos = Video.query.filter_by(level_id=level_id).count()
     
-    # Update can_take_final_exam status
     if completed_videos == total_videos:
         user_level.can_take_final_exam = True
     
@@ -750,28 +608,17 @@ def update_level_progress(user_id, level_id):
         'can_take_final_exam': user_level.can_take_final_exam
     }), 200
 
-# Statistics Routes (Admin only)
 @bp.route('/admin/statistics', methods=['GET'])
 @admin_required
 def get_admin_statistics():
-    # Total users
     total_users = User.query.filter_by(role='client').count()
-    
-    # Total levels
     total_levels = Level.query.count()
-    
-    # Total purchases
     total_purchases = UserLevel.query.count()
-    
-    # Completed levels
     completed_levels = UserLevel.query.filter_by(is_completed=True).count()
-    
-    # Average completion rate
     completion_rate = (completed_levels / total_purchases * 100) if total_purchases > 0 else 0
     
-    # Most popular levels with labeled columns
     popular_levels = db.session.query(
-        Level.name.label('level_name'),
+        Level.name,
         db.func.count(UserLevel.id).label('purchases')
     ).join(UserLevel).group_by(Level.id).order_by(db.desc('purchases')).limit(5).all()
     
@@ -781,25 +628,19 @@ def get_admin_statistics():
         'total_purchases': total_purchases,
         'completed_levels': completed_levels,
         'completion_rate': round(completion_rate, 2),
-        'popular_levels': [{'name': level.level_name, 'purchases': level.purchases} for level in popular_levels]
+        'popular_levels': [{'name': level.name, 'purchases': level.purchases} for level in popular_levels]
     }), 200
+
 @bp.route('/admin/users/<int:user_id>/statistics', methods=['GET'])
 @admin_required
 def get_user_statistics(user_id):
     user = User.query.get_or_404(user_id)
-    
-    # User's purchased levels
     purchased_levels = UserLevel.query.filter_by(user_id=user_id).count()
-    
-    # User's completed levels
     completed_levels = UserLevel.query.filter_by(user_id=user_id, is_completed=True).count()
-    
-    # User's average exam scores
     exam_results = ExamResult.query.filter_by(user_id=user_id).all()
     
     initial_scores = [exam.percentage for exam in exam_results if exam.type == 'initial']
     final_scores = [exam.percentage for exam in exam_results if exam.type == 'final']
-    
     avg_initial_score = sum(initial_scores) / len(initial_scores) if initial_scores else 0
     avg_final_score = sum(final_scores) / len(final_scores) if final_scores else 0
     avg_improvement = avg_final_score - avg_initial_score if initial_scores and final_scores else 0
@@ -815,4 +656,3 @@ def get_user_statistics(user_id):
         'average_improvement': round(avg_improvement, 2),
         'total_exams_taken': len(exam_results)
     }), 200
-
