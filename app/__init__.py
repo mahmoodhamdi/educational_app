@@ -1,4 +1,3 @@
-
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -23,6 +22,10 @@ def create_app(config_class=Config):
 
     from app import routes
     app.register_blueprint(routes.bp)
+
+    # Initialize the database
+    with app.app_context():
+        db.create_all()
 
     return app
 
