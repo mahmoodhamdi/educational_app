@@ -22,6 +22,51 @@ Authorization: Bearer <jwt_token>
 
 ## 📚 API Endpoints
 
+### 🔗 Welcome Video Endpoints
+
+#### Set Welcome Video (Admin Only)
+
+```http
+POST /welcome_video
+```
+
+**Auth Required:** Yes  
+**Permissions:** Admin only
+
+**Request Body:**
+
+```json
+{
+  "video_url": "https://youtube.com/watch?v=welcome123"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "video_url": "https://youtube.com/watch?v=welcome123"
+}
+```
+
+#### Get Welcome Video
+
+```http
+GET /welcome_video
+```
+
+**Auth Required:** No  
+**Description:** Retrieves the welcome video URL for the app homepage
+
+**Response:**
+
+```json
+{
+  "video_url": "https://youtube.com/watch?v=welcome123"
+}
+```
+
 ### 🔐 Authentication Endpoints
 
 #### Register User
@@ -67,7 +112,6 @@ POST /login
 {
   "email": "ahmed@example.com",
   "password": "password123"
-  
 }
 ```
 
@@ -401,6 +445,7 @@ GET /admin/users/{user_id}/statistics
 - Create, update, delete levels
 - Create, update, delete videos
 - Upload images
+- Set welcome video URL
 - View all user statistics
 - Access all user data
 
@@ -412,6 +457,7 @@ GET /admin/users/{user_id}/statistics
 - Submit exams
 - View own progress and statistics
 - Update own profile
+- View welcome video URL
 
 ---
 
@@ -443,12 +489,19 @@ GET /admin/users/{user_id}/statistics
 - Support for both file uploads and direct URL links
 - Automatic file naming and storage
 
+### 🎥 Welcome Video
+
+- Single welcome video URL for app homepage
+- Admin can set/update the URL
+- Accessible to all users without authentication
+
 ---
 
 ## 🛠️ Technical Details
 
 ### Database Models
 
+- **WelcomeVideo**: Stores the app's welcome video URL
 - **User**: Authentication and profile data
 - **Level**: Course level information
 - **Video**: YouTube video links and questions

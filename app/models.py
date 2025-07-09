@@ -1,6 +1,13 @@
 from datetime import datetime
 from app import db
 
+class WelcomeVideo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    video_url = db.Column(db.String(200), nullable=False)
+
+    def __repr__(self):
+        return f'WelcomeVideo(\'{self.video_url}\')'
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -36,6 +43,7 @@ class Video(db.Model):
 
     def __repr__(self):
         return f'Video(\'{self.youtube_link}\')'
+
 class UserLevel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -72,5 +80,3 @@ class ExamResult(db.Model):
 
     def __repr__(self):
         return f'ExamResult(User: {self.user_id}, Level: {self.level_id}, Type: {self.type}, Score: {self.percentage})'
-
-
