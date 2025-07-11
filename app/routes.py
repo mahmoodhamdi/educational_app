@@ -247,14 +247,9 @@ def create_level():
     if file.filename == '':
         return jsonify({'message': 'No file selected'}), 400
     
-    level_number = data.get('level_number')
-    if not level_number or not level_number.isdigit():
-        return jsonify({'message': 'Valid level number required'}), 400
-    
     level = Level(
         name=data['name'],
         description=data.get('description', ''),
-        level_number=int(level_number),
         welcome_video_url=data.get('welcome_video_url', ''),
         price=float(data['price']),
         initial_exam_question=data.get('initial_exam_question', ''),
@@ -276,7 +271,6 @@ def create_level():
         'id': level.id,
         'name': level.name,
         'description': level.description,
-        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
         'image_path': level.image_path,
         'price': level.price,
@@ -294,7 +288,6 @@ def update_level(level_id):
     
     level.name = data.get('name', level.name)
     level.description = data.get('description', level.description)
-    level.level_number = int(data.get('level_number', level.level_number))
     level.welcome_video_url = data.get('welcome_video_url', level.welcome_video_url)
     level.price = float(data.get('price', level.price))
     level.initial_exam_question = data.get('initial_exam_question', level.initial_exam_question)
@@ -315,7 +308,6 @@ def update_level(level_id):
         'id': level.id,
         'name': level.name,
         'description': level.description,
-        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
         'image_path': level.image_path,
         'price': level.price,
@@ -348,8 +340,7 @@ def get_levels():
     user = User.query.get(current_user_id)
     
     min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price' ,type=float)
-    level_number = request.args.get('level_number', type=int)
+    max_price = request.args.get('max_price', type=float)
     name = request.args.get('name')
     
     query = Level.query
@@ -358,12 +349,10 @@ def get_levels():
         query = query.filter(Level.price >= min_price)
     if max_price is not None:
         query = query.filter(Level.price <= max_price)
-    if level_number is not None:
-        query = query.filter(Level.level_number == level_number)
     if name:
         query = query.filter(Level.name.ilike(f'%{name}%'))
     
-    levels = query.order_by(Level.level_number).all()
+    levels = query.order_by(Level.name).all()
     result = []
     
     for level in levels:
@@ -371,7 +360,6 @@ def get_levels():
             'id': level.id,
             'name': level.name,
             'description': level.description,
-            'level_number': level.level_number,
             'welcome_video_url': level.welcome_video_url,
             'image_path': level.image_path,
             'price': level.price,
@@ -416,7 +404,6 @@ def get_levels():
 def admin_get_all_levels():
     min_price = request.args.get('min_price', type=float)
     max_price = request.args.get('max_price', type=float)
-    level_number = request.args.get('level_number', type=int)
     name = request.args.get('name')
     
     query = Level.query
@@ -425,17 +412,14 @@ def admin_get_all_levels():
         query = query.filter(Level.price >= min_price)
     if max_price is not None:
         query = query.filter(Level.price <= max_price)
-    if level_number is not None:
-        query = query.filter(Level.level_number == level_number)
     if name:
         query = query.filter(Level.name.ilike(f'%{name}%'))
     
-    levels = query.order_by(Level.level_number).all()
+    levels = query.order_by(Level.name).all()
     result = [{
         'id': level.id,
         'name': level.name,
         'description': level.description,
-        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
         'image_path': level.image_path,
         'price': level.price,
@@ -461,7 +445,6 @@ def get_level(level_id):
         'id': level.id,
         'name': level.name,
         'description': level.description,
-        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
         'image_path': level.image_path,
         'price': level.price,
@@ -785,7 +768,6 @@ def get_user_levels(user_id):
             'user_id': user_id,
             'level_id': level.id,
             'level_name': level.name,
-            'level_number': level.level_number,
             'completed_videos_count': completed_videos_count,
             'total_videos_count': len(level.videos),
             'videos_progress': videos_progress,

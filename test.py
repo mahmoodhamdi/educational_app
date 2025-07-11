@@ -13,7 +13,8 @@ import random
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-BASE_URL = "http://localhost:5000"
+# Base URL: Replace with your actual base URL (e.g., https://<your-domain>.pythonanywhere.com)
+BASE_URL = "https://<your-domain>.pythonanywhere.com"
 
 def test_register_and_login():
     """Test user registration and login"""
@@ -95,14 +96,18 @@ def test_level_management(admin_token):
         "name": "Test Level 1",
         "description": "This is a test level for API testing",
         "welcome_video_url": "https://youtube.com/watch?v=test123",
-        "image_url": "https://example.com/test-level.jpg",
         "price": 49.99,
         "initial_exam_question": "What do you expect to learn?",
         "final_exam_question": "What did you learn from this level?"
     }
     
+    # Path to a test image file (replace with actual path)
+    files = {
+        "file": ("test-level.jpg", open("/path/to/your/test-level.jpg", "rb"), "image/jpeg")
+    }
+    
     try:
-        response = requests.post(f"{BASE_URL}/levels", json=level_data, headers=headers, timeout=5)
+        response = requests.post(f"{BASE_URL}/levels", data=level_data, files=files, headers=headers, timeout=5)
         logger.info(f"Create Level: {response.status_code}")
         if response.status_code == 201:
             level_id = response.json()['id']
@@ -114,6 +119,9 @@ def test_level_management(admin_token):
     except requests.RequestException as e:
         logger.error(f"❌ Level creation error: {str(e)}")
         return None
+    finally:
+        if files["file"] and not files["file"][1].closed:
+            files["file"][1].close()
 
 def test_video_management(admin_token, level_id):
     """Test video creation and management"""
@@ -124,18 +132,15 @@ def test_video_management(admin_token, level_id):
     videos = [
         {
             "youtube_link": "https://youtube.com/watch?v=video1",
-            "questions": ["What is the main concept in video 1?", "How does this apply?"],
-            "order_index": 1
+            "questions": ["What is the main concept in video 1?", "How does this apply?"]
         },
         {
             "youtube_link": "https://youtube.com/watch?v=video2",
-            "questions": ["What is the main concept in video 2?", "Can you give an example?"],
-            "order_index": 2
+            "questions": ["What is the main concept in video 2?", "Can you give an example?"]
         },
         {
             "youtube_link": "https://youtube.com/watch?v=video3",
-            "questions": ["What is the main concept in video 3?", "How does this relate to previous videos?"],
-            "order_index": 3
+            "questions": ["What is the main concept in video 3?", "How does this relate to previous videos?"]
         }
     ]
     
