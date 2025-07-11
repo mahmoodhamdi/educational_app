@@ -10,6 +10,18 @@ from werkzeug.utils import secure_filename
 
 bp = Blueprint('main', __name__)
 
+# Custom decorator to allow both admin and client roles
+def admin_or_client_required(f):
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        current_user_id = int(get_jwt_identity())
+        user = User.query.get(current_user_id)
+        if user.role not in ['admin', 'client']:
+            return jsonify({'message': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
 # Welcome Video Management Routes
 @bp.route('/welcome_video', methods=['POST'])
 @admin_required
@@ -221,7 +233,7 @@ def assign_level_to_user(user_id, level_id):
 @bp.route('/levels', methods=['POST'])
 @admin_required
 def create_level():
-    data = request.form  # Changed to form to handle file upload
+    data = request.form
     
     if 'file' not in request.files:
         return jsonify({'message': 'Image file required'}), 400
@@ -325,14 +337,13 @@ def delete_level(level_id):
     return jsonify({'message': 'Level deleted successfully'}), 200
 
 @bp.route('/levels', methods=['GET'])
-@client_required
+@admin_or_client_required
 def get_levels():
     current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
-    # Get query parameters for filtering
     min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price', type=float)
+    max_price = request.args.get('max_price' ,type=float)
     level_number = request.args.get('level_number', type=int)
     name = request.args.get('name')
     
@@ -380,13 +391,16 @@ def get_levels():
                 
                 video_data = {
                     'id': video.id,
-                    'youtube_link': video.youtube_link,
-                    'questions': json.loads(video.questions) if video.questions else [],
+                    'youtube_link': video.youtube_link if user.role == 'admin' else (video.youtube_link if video_progress and video_progress.is_opened else ''),
+                    'questions': json.loads(video.questions) if video.questions and (user.role == 'admin' or (video_progress and video_progress.is_opened)) else [],
                     'is_opened': video_progress.is_opened if video_progress else False
                 }
                 level_data['videos'].append(video_data)
         else:
             level_data['videos'] = [{'id': v.id, 'youtube_link': '', 'questions': [], 'is_opened': False} for v in level.videos]
+        
+        if user.role == 'admin':
+            level_data['user_count'] = len(level.user_levels)
         
         result.append(level_data)
     
@@ -395,7 +409,6 @@ def get_levels():
 @bp.route('/admin/levels', methods=['GET'])
 @admin_required
 def admin_get_all_levels():
-    # Get query parameters for filtering
     min_price = request.args.get('min_price', type=float)
     max_price = request.args.get('max_price', type=float)
     level_number = request.args.get('level_number', type=int)
@@ -577,7 +590,7 @@ def complete_video(user_id, level_id, video_id):
             current_video_index = i
             break
     
-    if current_video_index is not None and current_video_index + 1 < len(level_videos):
+    if current_video_index is not None and (current_video_index + 1) < len(level_videos):
         next_video = level_videos[current_video_index + 1]
         next_video_progress = UserVideoProgress.query.filter_by(
             user_level_id=user_level.id, 
