@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db, bcrypt
 from app.models import User, Level, Video, UserLevel, UserVideoProgress, ExamResult, WelcomeVideo
@@ -9,6 +9,11 @@ import uuid
 from werkzeug.utils import secure_filename
 
 bp = Blueprint('main', __name__)
+
+# Serve uploaded files
+@bp.route('/Uploads/levels/<filename>')
+def serve_uploaded_file(filename):
+    return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
 
 # Custom decorator to allow both admin and client roles
 def admin_or_client_required(f):
@@ -259,7 +264,7 @@ def create_level():
     if file:
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
-        upload_path = os.path.join('Uploads', 'levels', unique_filename)
+        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
         os.makedirs(os.path.dirname(upload_path), exist_ok=True)
         file.save(upload_path)
         level.image_path = f"/Uploads/levels/{unique_filename}"
@@ -299,7 +304,7 @@ def update_level(level_id):
         file = request.files['file']
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
-        upload_path = os.path.join('Uploads', 'levels', unique_filename)
+        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
         os.makedirs(os.path.dirname(upload_path), exist_ok=True)
         file.save(upload_path)
         level.image_path = f"/Uploads/levels/{unique_filename}"
