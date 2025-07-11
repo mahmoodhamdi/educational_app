@@ -63,12 +63,7 @@ curl -X PUT "{{base}}/users/${CLIENT_ID}" \
 # Delete User (Admin)
 curl -X DELETE "{{base}}/admin/users/${CLIENT_ID}" \
      -H "Authorization: Bearer {{ADMIN_TOKEN}}"
-
-# Reset User Password (Admin)
-curl -X POST "{{base}}/admin/users/${CLIENT_ID}/reset_password" \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
-     -d '{ "new_password": "newpassword123" }'
+ 
 
 # Assign Level to User (Admin)
 curl -X POST "{{base}}/admin/users/${CLIENT_ID}/assign_level/${LEVEL_ID}" \
@@ -78,16 +73,38 @@ curl -X POST "{{base}}/admin/users/${CLIENT_ID}/assign_level/${LEVEL_ID}" \
 
 # Create Level (Admin)
 curl -X POST "{{base}}/levels" \
-     -H "Content-Type: application/json" \
      -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
-     -d '{ "name": "Sample Level", "description": "A description for the sample level.", "welcome_video_url": "https://www.youtube.com/watch?v=sample_welcome", "image_url": "https://example.com/sample_level.jpg", "price": 19.99, "initial_exam_question": "What is the capital of France?", "final_exam_question": "Summarize the key concepts of this level." }'
+     -F "name=Sample Level" \
+     -F "description=A description for the sample level." \
+     -F "level_number=1" \
+     -F "welcome_video_url=https://www.youtube.com/watch?v=sample_welcome" \
+     -F "price=19.99" \
+     -F "initial_exam_question=What is the capital of France?" \
+     -F "final_exam_question=Summarize the key concepts of this level." \
+     -F "file=@/path/to/your/image.jpg"
 
-# Get All Levels (Client)
-curl -X GET "{{base}}/levels" \
+# Get All Levels with Filters (Client)
+curl -X GET "{{base}}/levels?min_price=10&max_price=50&level_number=1&name=Sample" \
+     -H "Authorization: Bearer ${CLIENT_TOKEN}"
+
+# Get All Levels with Price Filter (Client)
+curl -X GET "{{base}}/levels?min_price=20&max_price=100" \
+     -H "Authorization: Bearer ${CLIENT_TOKEN}"
+
+# Get All Levels by Name (Client)
+curl -X GET "{{base}}/levels?name=Basic" \
+     -H "Authorization: Bearer ${CLIENT_TOKEN}"
+
+# Get All Levels by Level Number (Client)
+curl -X GET "{{base}}/levels?level_number=2" \
      -H "Authorization: Bearer ${CLIENT_TOKEN}"
 
 # Get All Levels (Admin)
 curl -X GET "{{base}}/admin/levels" \
+     -H "Authorization: Bearer {{ADMIN_TOKEN}}"
+
+# Get All Levels with Filters (Admin)
+curl -X GET "{{base}}/admin/levels?min_price=10&max_price=50&level_number=1&name=Sample" \
      -H "Authorization: Bearer {{ADMIN_TOKEN}}"
 
 # Get Single Level (Client)
@@ -96,9 +113,12 @@ curl -X GET "{{base}}/levels/${LEVEL_ID}" \
 
 # Update Level (Admin)
 curl -X PUT "{{base}}/levels/${LEVEL_ID}" \
-     -H "Content-Type: application/json" \
      -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
-     -d '{ "name": "Updated Sample Level", "description": "An updated description for the sample level.", "price": 24.99 }'
+     -F "name=Updated Sample Level" \
+     -F "description=An updated description for the sample level." \
+     -F "level_number=1" \
+     -F "price=24.99" \
+     -F "file=@/path/to/your/updated_image.jpg"
 
 # Delete Level (Admin)
 curl -X DELETE "{{base}}/levels/${LEVEL_ID}" \
@@ -125,13 +145,6 @@ curl -X DELETE "{{base}}/videos/${VIDEO_ID}" \
 # Get All Videos (Admin)
 curl -X GET "{{base}}/admin/videos" \
      -H "Authorization: Bearer {{ADMIN_TOKEN}}"
-
-# --- Image Upload ---
-
-# Upload Level Image (Admin)
-curl -X POST "{{base}}/levels/${LEVEL_ID}/upload_image" \
-     -H "Authorization: Bearer {{ADMIN_TOKEN}}" \
-     -F "file=@/path/to/your/image.jpg"
 
 # --- Exams ---
 

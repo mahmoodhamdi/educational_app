@@ -24,8 +24,9 @@ class Level(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=True)
+    level_number = db.Column(db.Integer, nullable=False) # New attribute
     welcome_video_url = db.Column(db.String(200), nullable=True)
-    image_url = db.Column(db.String(200), nullable=True)
+    image_path = db.Column(db.String(200), nullable=True) # Changed from image_url
     price = db.Column(db.Float, nullable=False)
     initial_exam_question = db.Column(db.Text, nullable=True)
     final_exam_question = db.Column(db.Text, nullable=True)
@@ -39,7 +40,7 @@ class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     level_id = db.Column(db.Integer, db.ForeignKey('level.id'), nullable=False)
     youtube_link = db.Column(db.String(200), nullable=False)
-    questions = db.Column(db.Text, nullable=True) # Stored as JSON string or comma-separated
+    questions = db.Column(db.Text, nullable=True)
 
     def __repr__(self):
         return f'Video(\'{self.youtube_link}\')'
@@ -75,7 +76,7 @@ class ExamResult(db.Model):
     correct_words = db.Column(db.Integer, nullable=False)
     wrong_words = db.Column(db.Integer, nullable=False)
     percentage = db.Column(db.Float, nullable=False)
-    type = db.Column(db.String(20), nullable=False) # 'initial' or 'final'
+    type = db.Column(db.String(20), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):

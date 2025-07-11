@@ -4,6 +4,9 @@ from app import db, bcrypt
 from app.models import User, Level, Video, UserLevel, UserVideoProgress, ExamResult, WelcomeVideo
 from app.auth import admin_required, client_required, authenticate_user, create_user_token
 import json
+import os
+import uuid
+from werkzeug.utils import secure_filename
 
 bp = Blueprint('main', __name__)
 
@@ -17,10 +20,7 @@ def set_welcome_video():
     if not video_url:
         return jsonify({'message': 'Video URL required'}), 400
     
-    # Delete existing welcome video if any
     WelcomeVideo.query.delete()
-    
-    # Create new welcome video entry
     welcome_video = WelcomeVideo(video_url=video_url)
     db.session.add(welcome_video)
     db.session.commit()
@@ -221,17 +221,36 @@ def assign_level_to_user(user_id, level_id):
 @bp.route('/levels', methods=['POST'])
 @admin_required
 def create_level():
-    data = request.get_json()
+    data = request.form  # Changed to form to handle file upload
+    
+    if 'file' not in request.files:
+        return jsonify({'message': 'Image file required'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'message': 'No file selected'}), 400
+    
+    level_number = data.get('level_number')
+    if not level_number or not level_number.isdigit():
+        return jsonify({'message': 'Valid level number required'}), 400
     
     level = Level(
         name=data['name'],
         description=data.get('description', ''),
+        level_number=int(level_number),
         welcome_video_url=data.get('welcome_video_url', ''),
-        image_url=data.get('image_url', ''),
-        price=data['price'],
+        price=float(data['price']),
         initial_exam_question=data.get('initial_exam_question', ''),
         final_exam_question=data.get('final_exam_question', '')
     )
+    
+    if file:
+        filename = secure_filename(file.filename)
+        unique_filename = f"{uuid.uuid4()}_{filename}"
+        upload_path = os.path.join('Uploads', 'levels', unique_filename)
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+        file.save(upload_path)
+        level.image_path = f"/Uploads/levels/{unique_filename}"
     
     db.session.add(level)
     db.session.commit()
@@ -240,8 +259,9 @@ def create_level():
         'id': level.id,
         'name': level.name,
         'description': level.description,
+        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
-        'image_url': level.image_url,
+        'image_path': level.image_path,
         'price': level.price,
         'initial_exam_question': level.initial_exam_question,
         'final_exam_question': level.final_exam_question,
@@ -253,15 +273,24 @@ def create_level():
 @admin_required
 def update_level(level_id):
     level = Level.query.get_or_404(level_id)
-    data = request.get_json()
+    data = request.form
     
     level.name = data.get('name', level.name)
     level.description = data.get('description', level.description)
+    level.level_number = int(data.get('level_number', level.level_number))
     level.welcome_video_url = data.get('welcome_video_url', level.welcome_video_url)
-    level.image_url = data.get('image_url', level.image_url)
-    level.price = data.get('price', level.price)
+    level.price = float(data.get('price', level.price))
     level.initial_exam_question = data.get('initial_exam_question', level.initial_exam_question)
     level.final_exam_question = data.get('final_exam_question', level.final_exam_question)
+    
+    if 'file' in request.files and request.files['file'].filename:
+        file = request.files['file']
+        filename = secure_filename(file.filename)
+        unique_filename = f"{uuid.uuid4()}_{filename}"
+        upload_path = os.path.join('Uploads', 'levels', unique_filename)
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+        file.save(upload_path)
+        level.image_path = f"/Uploads/levels/{unique_filename}"
     
     db.session.commit()
     
@@ -269,8 +298,9 @@ def update_level(level_id):
         'id': level.id,
         'name': level.name,
         'description': level.description,
+        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
-        'image_url': level.image_url,
+        'image_path': level.image_path,
         'price': level.price,
         'initial_exam_question': level.initial_exam_question,
         'final_exam_question': level.final_exam_question,
@@ -300,7 +330,24 @@ def get_levels():
     current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
-    levels = Level.query.all()
+    # Get query parameters for filtering
+    min_price = request.args.get('min_price', type=float)
+    max_price = request.args.get('max_price', type=float)
+    level_number = request.args.get('level_number', type=int)
+    name = request.args.get('name')
+    
+    query = Level.query
+    
+    if min_price is not None:
+        query = query.filter(Level.price >= min_price)
+    if max_price is not None:
+        query = query.filter(Level.price <= max_price)
+    if level_number is not None:
+        query = query.filter(Level.level_number == level_number)
+    if name:
+        query = query.filter(Level.name.ilike(f'%{name}%'))
+    
+    levels = query.order_by(Level.level_number).all()
     result = []
     
     for level in levels:
@@ -308,8 +355,9 @@ def get_levels():
             'id': level.id,
             'name': level.name,
             'description': level.description,
+            'level_number': level.level_number,
             'welcome_video_url': level.welcome_video_url,
-            'image_url': level.image_url,
+            'image_path': level.image_path,
             'price': level.price,
             'initial_exam_question': level.initial_exam_question,
             'final_exam_question': level.final_exam_question,
@@ -347,13 +395,31 @@ def get_levels():
 @bp.route('/admin/levels', methods=['GET'])
 @admin_required
 def admin_get_all_levels():
-    levels = Level.query.all()
+    # Get query parameters for filtering
+    min_price = request.args.get('min_price', type=float)
+    max_price = request.args.get('max_price', type=float)
+    level_number = request.args.get('level_number', type=int)
+    name = request.args.get('name')
+    
+    query = Level.query
+    
+    if min_price is not None:
+        query = query.filter(Level.price >= min_price)
+    if max_price is not None:
+        query = query.filter(Level.price <= max_price)
+    if level_number is not None:
+        query = query.filter(Level.level_number == level_number)
+    if name:
+        query = query.filter(Level.name.ilike(f'%{name}%'))
+    
+    levels = query.order_by(Level.level_number).all()
     result = [{
         'id': level.id,
         'name': level.name,
         'description': level.description,
+        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
-        'image_url': level.image_url,
+        'image_path': level.image_path,
         'price': level.price,
         'initial_exam_question': level.initial_exam_question,
         'final_exam_question': level.final_exam_question,
@@ -377,8 +443,9 @@ def get_level(level_id):
         'id': level.id,
         'name': level.name,
         'description': level.description,
+        'level_number': level.level_number,
         'welcome_video_url': level.welcome_video_url,
-        'image_url': level.image_url,
+        'image_path': level.image_path,
         'price': level.price,
         'initial_exam_question': level.initial_exam_question,
         'final_exam_question': level.final_exam_question,
@@ -534,41 +601,6 @@ def complete_video(user_id, level_id, video_id):
     db.session.commit()
     
     return jsonify({'message': 'Video completed successfully'}), 200
-
-# Image Upload Route
-@bp.route('/levels/<int:level_id>/upload_image', methods=['POST'])
-@admin_required
-def upload_level_image(level_id):
-    level = Level.query.get_or_404(level_id)
-    
-    if 'file' not in request.files:
-        return jsonify({'message': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'message': 'No file selected'}), 400
-    
-    if file:
-        import os
-        import uuid
-        from werkzeug.utils import secure_filename
-        
-        filename = secure_filename(file.filename)
-        unique_filename = f"{uuid.uuid4()}_{filename}"
-        
-        upload_path = os.path.join('uploads', 'levels', unique_filename)
-        file.save(upload_path)
-        
-        image_url = f"/Uploads/levels/{unique_filename}"
-        level.image_url = image_url
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'image_url': image_url
-        }), 200
-    
-    return jsonify({'message': 'File upload failed'}), 400
 
 # Exam Routes
 @bp.route('/exams/<int:level_id>/initial', methods=['POST'])
@@ -735,6 +767,7 @@ def get_user_levels(user_id):
             'user_id': user_id,
             'level_id': level.id,
             'level_name': level.name,
+            'level_number': level.level_number,
             'completed_videos_count': completed_videos_count,
             'total_videos_count': len(level.videos),
             'videos_progress': videos_progress,
